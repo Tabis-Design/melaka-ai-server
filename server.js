@@ -46,18 +46,35 @@ app.post("/npc-chat", async function (req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-  console.log("OPENAI ERROR:", data);
-  return res.status(200).json({
-    answer: "AI service error: " + (data.error?.message || "Unknown OpenAI error")
-  });
-}
+      console.log("OPENAI ERROR:", data);
+      return res.status(200).json({
+        answer: "AI service error: " + (data.error?.message || "Unknown OpenAI error")
+      });
+    }
 
-    const answer = data.output_text || "I am not sure about that, but I can tell you about Melaka history and landmarks.";
+    console.log("OPENAI RAW RESPONSE:", JSON.stringify(data, null, 2));
+
+    let answer = "I am not sure about that, but I can tell you about Melaka history and landmarks.";
+
+    if (data.output_text) {
+      answer = data.output_text;
+    } else if (
+      data.output &&
+      data.output[0] &&
+      data.output[0].content &&
+      data.output[0].content[0] &&
+      data.output[0].content[0].text
+    ) {
+      answer = data.output[0].content[0].text;
+    }
 
     res.json({ answer: answer });
+
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ answer: "Server error. Please try again later." });
+    console.log("SERVER ERROR:", error);
+    res.status(500).json({
+      answer: "Server error. Please try again later."
+    });
   }
 });
 
