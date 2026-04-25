@@ -46,9 +46,11 @@ app.post("/npc-chat", async function (req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.log(data);
-      return res.status(500).json({ answer: "AI service error. Please try again later." });
-    }
+  console.log("OPENAI ERROR:", data);
+  return res.status(200).json({
+    answer: "AI service error: " + (data.error?.message || "Unknown OpenAI error")
+  });
+}
 
     const answer = data.output_text || "I am not sure about that, but I can tell you about Melaka history and landmarks.";
 
