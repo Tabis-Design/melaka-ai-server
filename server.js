@@ -10,6 +10,115 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+let dailyQuizCache = null;
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function fallbackDailyQuiz() {
+  return {
+    date: getTodayKey(),
+    questions: [
+      {
+        question: "What is Melaka famous for?",
+        answers: ["Its historical trading port", "Snow mountains", "Desert safaris"],
+        correctIndex: 1,
+        explanation: "Melaka was an important trading port with rich cultural history."
+      },
+      {
+        question: "Which street in Melaka is famous for food and night markets?",
+        answers: ["Jonker Street", "Oxford Street", "Wall Street"],
+        correctIndex: 1,
+        explanation: "Jonker Street is known for food, shopping, and its night market."
+      },
+      {
+        question: "What old fort can visitors see in Melaka?",
+        answers: ["A Famosa", "The Colosseum", "Great Wall"],
+        correctIndex: 1,
+        explanation: "A Famosa is one of Melaka's famous historical landmarks."
+      },
+      {
+        question: "Which culture is strongly linked with Baba Nyonya heritage?",
+        answers: ["Peranakan culture", "Viking culture", "Aztec culture"],
+        correctIndex: 1,
+        explanation: "Baba Nyonya culture is part of Melaka's Peranakan heritage."
+      },
+      {
+        question: "What river is popular with tourists in Melaka?",
+        answers: ["Melaka River", "Amazon River", "Nile River"],
+        correctIndex: 1,
+        explanation: "The Melaka River is a popular area for sightseeing and river cruises."
+      },
+      {
+        question: "Why was Melaka important in history?",
+        answers: ["It was a major trading hub", "It was a ski resort", "It was a desert kingdom"],
+        correctIndex: 1,
+        explanation: "Melaka became important because of trade between East and West."
+      },
+      {
+        question: "Which famous red building is in Dutch Square?",
+        answers: ["Christ Church", "Big Ben", "Eiffel Tower"],
+        correctIndex: 1,
+        explanation: "Christ Church is one of the famous red buildings in Dutch Square."
+      },
+      {
+        question: "What food is Melaka known for?",
+        answers: ["Chicken rice balls", "Tacos", "Sushi rolls"],
+        correctIndex: 1,
+        explanation: "Chicken rice balls are one of Melaka's well-known local foods."
+      },
+      {
+        question: "What type of city is Melaka often called?",
+        answers: ["A heritage city", "A snow city", "A space city"],
+        correctIndex: 1,
+        explanation: "Melaka is known for its heritage, culture, and historical landmarks."
+      },
+      {
+        question: "Which hill in Melaka is linked with old ruins and history?",
+        answers: ["St. Paul's Hill", "Mount Everest", "Hollywood Hill"],
+        correctIndex: 1,
+        explanation: "St. Paul's Hill is a historical site visited by many tourists."
+      }
+    ]
+  };
+}
+
+function normalizeQuiz(parsed) {
+  const fallback = fallbackDailyQuiz();
+  const questions = Array.isArray(parsed.questions) ? parsed.questions : [];
+
+  const cleanQuestions = questions.slice(0, 10).map(function (item, index) {
+    const fallbackItem = fallback.questions[index];
+
+    let answers = Array.isArray(item.answers) ? item.answers.slice(0, 3) : fallbackItem.answers;
+    while (answers.length < 3) {
+      answers.push(fallbackItem.answers[answers.length]);
+    }
+
+    let correctIndex = Number(item.correctIndex);
+    if (Number.isNaN(correctIndex) || correctIndex < 1 || correctIndex > 3) {
+      correctIndex = fallbackItem.correctIndex;
+    }
+
+    return {
+      question: item.question || fallbackItem.question,
+      answers: answers,
+      correctIndex: correctIndex,
+      explanation: item.explanation || fallbackItem.explanation
+    };
+  });
+
+  while (cleanQuestions.length < 10) {
+    cleanQuestions.push(fallback.questions[cleanQuestions.length]);
+  }
+
+  return {
+    date: getTodayKey(),
+    questions: cleanQuestions
+  };
+}
+
 app.get("/", function (req, res) {
   res.json({ status: "Melaka AI server is running" });
 });
@@ -74,7 +183,6 @@ Do not include extra text outside JSON.
     const data = await response.json();
 
     if (!response.ok) {
-      console.log("OPENAI ERROR:", data);
       return res.status(200).json({
         answer: "AI service error: " + (data.error?.message || "Unknown OpenAI error"),
         questions: [
@@ -96,8 +204,6 @@ Do not include extra text outside JSON.
     try {
       parsed = JSON.parse(rawText);
     } catch (error) {
-      console.log("JSON PARSE ERROR:", rawText);
-
       parsed = {
         answer: rawText || "I can tell you more about Melaka history and landmarks.",
         questions: [
@@ -123,8 +229,6 @@ Do not include extra text outside JSON.
     });
 
   } catch (error) {
-    console.log("SERVER ERROR:", error);
-
     res.status(500).json({
       answer: "Server error. Please try again later.",
       questions: [
@@ -136,9 +240,13 @@ Do not include extra text outside JSON.
   }
 });
 
-app.post("/npc-quiz", async function (req, res) {
+app.post("/npc-daily-quiz", async function (req, res) {
   try {
-    const topic = req.body.topic || "Melaka, Malaysia";
+    const today = getTodayKey();
+
+    if (dailyQuizCache && dailyQuizCache.date === today) {
+      return res.json(dailyQuizCache);
+    }
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -152,35 +260,38 @@ app.post("/npc-quiz", async function (req, res) {
           {
             role: "system",
             content: `
-You are a Roblox quiz NPC about Melaka, Malaysia.
+You are a Roblox quiz generator about Melaka, Malaysia.
 
-Create one multiple-choice quiz question about Melaka.
-The quiz must be educational and suitable for Roblox players.
+Generate exactly 10 multiple-choice quiz questions about Melaka, Malaysia.
+The quiz must be educational, simple, and suitable for Roblox players.
 
 Respond ONLY in valid JSON:
 {
-  "question": "quiz question here",
-  "answers": [
-    "answer option 1",
-    "answer option 2",
-    "answer option 3"
-  ],
-  "correctIndex": 1,
-  "explanation": "short explanation here"
+  "questions": [
+    {
+      "question": "question 1",
+      "answers": ["answer 1", "answer 2", "answer 3"],
+      "correctIndex": 1,
+      "explanation": "short explanation"
+    }
+  ]
 }
 
 Rules:
+- Generate exactly 10 questions.
+- Each question must have exactly 3 answers.
 - correctIndex must be 1, 2, or 3.
 - Only one answer should be correct.
-- Keep the question short.
-- Keep the explanation under 2 short sentences.
+- Keep questions short.
+- Keep explanations under 2 short sentences.
+- Focus only on Melaka history, landmarks, culture, food, tourism, and heritage.
 - Do not include markdown.
 - Do not include extra text outside JSON.
 `
           },
           {
             role: "user",
-            content: "Generate a new quiz about " + topic
+            content: "Generate today's 10-question Melaka quiz."
           }
         ]
       })
@@ -189,17 +300,8 @@ Rules:
     const data = await response.json();
 
     if (!response.ok) {
-      console.log("OPENAI QUIZ ERROR:", data);
-      return res.status(200).json({
-        question: "What is Melaka famous for?",
-        answers: [
-          "Its historical trading port",
-          "Snow mountains",
-          "Desert safaris"
-        ],
-        correctIndex: 1,
-        explanation: "Melaka was an important trading port with rich cultural history."
-      });
+      dailyQuizCache = fallbackDailyQuiz();
+      return res.json(dailyQuizCache);
     }
 
     let rawText = data.output_text || "";
@@ -213,54 +315,15 @@ Rules:
     try {
       parsed = JSON.parse(rawText);
     } catch (error) {
-      console.log("QUIZ JSON PARSE ERROR:", rawText);
-
-      parsed = {
-        question: "What is Melaka famous for?",
-        answers: [
-          "Its historical trading port",
-          "Snow mountains",
-          "Desert safaris"
-        ],
-        correctIndex: 1,
-        explanation: "Melaka was an important trading port with rich cultural history."
-      };
+      parsed = fallbackDailyQuiz();
     }
 
-    const answers = Array.isArray(parsed.answers) && parsed.answers.length >= 3
-      ? parsed.answers.slice(0, 3)
-      : [
-          "Its historical trading port",
-          "Snow mountains",
-          "Desert safaris"
-        ];
-
-    let correctIndex = Number(parsed.correctIndex);
-
-    if (correctIndex < 1 || correctIndex > 3 || Number.isNaN(correctIndex)) {
-      correctIndex = 1;
-    }
-
-    res.json({
-      question: parsed.question || "What is Melaka famous for?",
-      answers: answers,
-      correctIndex: correctIndex,
-      explanation: parsed.explanation || "Melaka is known for its history and culture."
-    });
+    dailyQuizCache = normalizeQuiz(parsed);
+    res.json(dailyQuizCache);
 
   } catch (error) {
-    console.log("QUIZ SERVER ERROR:", error);
-
-    res.status(500).json({
-      question: "What is Melaka famous for?",
-      answers: [
-        "Its historical trading port",
-        "Snow mountains",
-        "Desert safaris"
-      ],
-      correctIndex: 1,
-      explanation: "Melaka was an important trading port with rich cultural history."
-    });
+    dailyQuizCache = fallbackDailyQuiz();
+    res.json(dailyQuizCache);
   }
 });
 
