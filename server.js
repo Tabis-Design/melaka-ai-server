@@ -136,6 +136,134 @@ Do not include extra text outside JSON.
   }
 });
 
+app.post("/npc-quiz", async function (req, res) {
+  try {
+    const topic = req.body.topic || "Melaka, Malaysia";
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + process.env.OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "system",
+            content: `
+You are a Roblox quiz NPC about Melaka, Malaysia.
+
+Create one multiple-choice quiz question about Melaka.
+The quiz must be educational and suitable for Roblox players.
+
+Respond ONLY in valid JSON:
+{
+  "question": "quiz question here",
+  "answers": [
+    "answer option 1",
+    "answer option 2",
+    "answer option 3"
+  ],
+  "correctIndex": 1,
+  "explanation": "short explanation here"
+}
+
+Rules:
+- correctIndex must be 1, 2, or 3.
+- Only one answer should be correct.
+- Keep the question short.
+- Keep the explanation under 2 short sentences.
+- Do not include markdown.
+- Do not include extra text outside JSON.
+`
+          },
+          {
+            role: "user",
+            content: "Generate a new quiz about " + topic
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.log("OPENAI QUIZ ERROR:", data);
+      return res.status(200).json({
+        question: "What is Melaka famous for?",
+        answers: [
+          "Its historical trading port",
+          "Snow mountains",
+          "Desert safaris"
+        ],
+        correctIndex: 1,
+        explanation: "Melaka was an important trading port with rich cultural history."
+      });
+    }
+
+    let rawText = data.output_text || "";
+
+    if (!rawText && data.output && data.output[0] && data.output[0].content && data.output[0].content[0]) {
+      rawText = data.output[0].content[0].text || "";
+    }
+
+    let parsed;
+
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (error) {
+      console.log("QUIZ JSON PARSE ERROR:", rawText);
+
+      parsed = {
+        question: "What is Melaka famous for?",
+        answers: [
+          "Its historical trading port",
+          "Snow mountains",
+          "Desert safaris"
+        ],
+        correctIndex: 1,
+        explanation: "Melaka was an important trading port with rich cultural history."
+      };
+    }
+
+    const answers = Array.isArray(parsed.answers) && parsed.answers.length >= 3
+      ? parsed.answers.slice(0, 3)
+      : [
+          "Its historical trading port",
+          "Snow mountains",
+          "Desert safaris"
+        ];
+
+    let correctIndex = Number(parsed.correctIndex);
+
+    if (correctIndex < 1 || correctIndex > 3 || Number.isNaN(correctIndex)) {
+      correctIndex = 1;
+    }
+
+    res.json({
+      question: parsed.question || "What is Melaka famous for?",
+      answers: answers,
+      correctIndex: correctIndex,
+      explanation: parsed.explanation || "Melaka is known for its history and culture."
+    });
+
+  } catch (error) {
+    console.log("QUIZ SERVER ERROR:", error);
+
+    res.status(500).json({
+      question: "What is Melaka famous for?",
+      answers: [
+        "Its historical trading port",
+        "Snow mountains",
+        "Desert safaris"
+      ],
+      correctIndex: 1,
+      explanation: "Melaka was an important trading port with rich cultural history."
+    });
+  }
+});
+
 app.listen(PORT, function () {
   console.log("Server running on port " + PORT);
 });
